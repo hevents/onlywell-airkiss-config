@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Onlywell配网</string>
+    <string name="hint_ssid">WiFi 名称 (SSID)</string>
+    <string name="hint_pwd">WiFi 密码</string>
+    <string name="pwd_tip">⚠ 提示：部分表芯固件密码仅支持 8 位；实测 8 位可成功，超过 8 位均失败（请用恰好 8 位密码）</string>
+    <string name="btn_send">发送配网广播</string>
+    <string name="tip">① 手机连上 2.4G WiFi（首次打开会请求“位置”权限，Android 10+ 读取 WiFi 名称需要，请允许）\n② 表芯长按 WIFI 键 3 秒（秒针走到 12 点 = 监听态）\n③ SSID 已自动填好，补上密码，点下方按钮发送\n④ 去路由器看 ESP_ 开头的设备是否上线</string>
+</resources>
