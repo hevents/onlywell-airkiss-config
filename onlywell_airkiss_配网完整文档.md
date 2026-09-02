@@ -90,7 +90,7 @@ random(1B)=0x51=81   ← 与本次广播的 random=81 精确命中
 
 ### ② 手机版（Android APK，免 PC）
 
-安装 `OnlywellAirkiss-Config-v1.0.apk`（图标「Onlywell配网」）→ 确认 SSID 已自动填好、频段提示为绿色 2.4G → 补密码（明文显示，可直接核对；**注意：部分表芯固件密码仅支持 8 位，超过 8 位会失败**，详见下方「附」） → 点「发送配网广播」→ **同时确认表芯处于监听态（秒针停在 12 不动）**。
+安装 `OnlywellAirkiss-Config-v1.1.apk`（图标「Onlywell配网」）→ 确认 SSID 已自动填好、频段提示为绿色 2.4G → 补密码（明文显示，可直接核对；**注意：部分表芯固件密码仅支持 8 位，超过 8 位会失败**，详见下方「附」） → 点「发送配网广播」→ **同时确认表芯处于监听态（秒针停在 12 不动）**。
 
 权限：`INTERNET` / `ACCESS_WIFI_STATE` / `ACCESS_FINE_LOCATION` / `NEARBY_WIFI_DEVICES`。其中 `ACCESS_FINE_LOCATION` 是 Android 10+ 读取 SSID 所必需，安装后首次打开请点「允许（仅使用期间）」；若拒绝则 SSID 需手动输入。手机必须连 2.4G WiFi。
 
@@ -172,6 +172,7 @@ Airkiss 广播最常被以下设置掐断，可顺手调一次：
 
 | 版本 | 关键变更 |
 |---|---|
+| **v1.1** | **WiFi 刷新**：切网回到应用自动刷新当前 WiFi（SSID+频段）；页面上部下拉手动刷新；手输过 SSID 不被覆盖 |
 | **v1.0** | **首个正式版（2026-09-02 发布）**，功能为下列内测版本之合集 |
 | v1.3 | 初版 APK；ACK 监听（按 IP 解析）+ ARP 扫描兜底 |
 | v1.4 | 诊断版：ACK 监听窗口从固定 6 秒延长到「广播 + 10 秒」；ARP 加 `/proc/net/arp` 诊断 dump |
