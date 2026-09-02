@@ -14,7 +14,7 @@ Onlywell 是微信生态 ESP 设备，配网走 **Airkiss** 协议。微信解�
 
 1. **微信小程序（最简单）**：微信搜索「**一键配网**」或「**安信可 IoT**」小程序 → 选 **AirKiss 配网** → 连 **2.4G** WiFi → 填密码 → 点「一键配网」→ **同时表芯长按 WIFI 键 3 秒，让秒针停在 12 点（监听态）**。
    - 这两个小程序均内置标准 Airkiss 协议，无需安装 App，是最快捷的配网方式。
-2. **本仓库 APK（推荐）**：安装 [`OnlywellAirkiss-Config-v1.0.apk`](https://github.com/hevents/onlywell-airkiss-config/releases/download/v1.0/OnlywellAirkiss-Config-v1.0.apk)（点链接直接下载；或到 [Releases 页](https://github.com/hevents/onlywell-airkiss-config/releases) 查看）→ 连 **2.4G** WiFi（App 会自动填 SSID，连 5G 会警告）→
+2. **本仓库 APK（推荐）**：安装 [`OnlywellAirkiss-Config-v1.1.apk`](https://github.com/hevents/onlywell-airkiss-config/releases/download/v1.1/OnlywellAirkiss-Config-v1.1.apk)（点链接直接下载；或到 [Releases 页](https://github.com/hevents/onlywell-airkiss-config/releases) 查看）→ 连 **2.4G** WiFi（App 会自动填 SSID，连 5G 会警告）→
    填密码（明文显示，方便核对） → 点「发送配网广播」→ **同时表芯长按 WIFI 键 3 秒，让秒针停在 12 点（监听态）** →
    App 监听到表芯回播即显示「✅ 配网成功！设备 MAC=… IP=…」，随后在微信里重扫设备二维码选「跳过联网」重新绑定。
    - 未收到回播：多为表芯**未处于监听态**，请重新发送配网广播（先长按表芯进监听、再立即点发送）。
@@ -25,7 +25,7 @@ Onlywell 是微信生态 ESP 设备，配网走 **Airkiss** 协议。微信解�
 
 ## 界面预览
 
-- **本仓库 APK 界面（v1.0）**：
+- **本仓库 APK 界面（v1.1）**：
 
   ![APP 界面](images/UI-APP.gif)
 
@@ -37,7 +37,7 @@ Onlywell 是微信生态 ESP 设备，配网走 **Airkiss** 协议。微信解�
 
   ![微信小程序 一键配网](images/微信小程序-一键配网.png)
 
-## 手机端工作原理（v1.0）
+## 手机端工作原理（v1.1）
 
 1. 把 `SSID + 密码` 按 Airkiss 编码成约 4175 个广播帧，循环重发（每帧约 4ms，单遍约 16.7s）。
 2. 表芯在监听态下嗅探到足够帧数即解出密码并联网。**Onlywell 表芯联网后会向手机 `:10000` 回播
@@ -50,6 +50,7 @@ Onlywell 是微信生态 ESP 设备，配网走 **Airkiss** 协议。微信解�
 7. 发送侧若 `255.255.255.255` 全 1 广播被内核拒绝（`EPERM`），自动切换为**子网定向广播**（本机 IP 末段置 255）兜底，无需重启手机；监听 socket 在 `finally` 中保证关闭，不会泄漏占用端口 10000。
 8. 端口 10000 被占用（`EADDRINUSE`）时给出明确引导：若强制停止本应用后仍占用，说明占用者是微信/安信可IoT 等**别的配网应用**（同样用 10000 收设备回播），去强制停止对应应用或等约 35 秒即可；广播不受影响，仍可在路由器侧确认 `ESP_` 设备上线。
 9. **密码长度提示**（密码框下方红字）：部分表芯固件密码仅支持 **8 位**；实测 8 位可成功、超过 8 位均失败（疑为设备 Airkiss 接收缓冲上限，非协议限制亦非本工具编码问题，请用恰好 8 位密码）。
+10. **WiFi 刷新（v1.1 新增）**：打开时连的是 5G？去系统设置切到 2.4G 后回到应用即**自动刷新**当前 WiFi（SSID + 频段提示同步更新）；在页面上部**下拉**也可手动刷新。手动改过 SSID 输入框则刷新不覆盖用户输入，只更新频段提示行。
 
 > 实测确认：onlywell 表芯配网成功**必会回播**，未收到回播基本是表芯没在监听窗口内。
 
