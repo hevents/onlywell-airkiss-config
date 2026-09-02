@@ -1,6 +1,9 @@
 package com.onlywell.airkiss;
 
 import android.Manifest;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -12,8 +15,11 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -38,6 +44,9 @@ import java.nio.ByteOrder;
  *      → v1.14：① 界面标题显示版本号(vX.Y)，便于核对装的是哪一版；② 修正 EADDRINUSE 引导——强制停止本应用仍占用说明占用者是微信/安信可IoT 等别的配网应用，引导强制停止对应应用或重启；并说明广播不受影响。
  *      → v1.1：WiFi 刷新——打开时连的是 5G、去系统设置切到 2.4G 后回到本页自动重读当前 WiFi；
  *               页面上部下拉手势也可手动刷新；用户手动改过 SSID 框则刷新不覆盖其输入，只更新频段提示行。
+ *      → v1.2：下拉刷新完整动画——拖拽时刷新头部跟手展开(超阈值后半程 0.5x 阻尼)，提示文字随高度切换
+ *               「↓ 下拉刷新」/「↑ 松开立即刷新」，松手回弹动画；达到阈值松手才触发刷新(转圈+「正在刷新…」)，
+ *               完成后头部平滑收起；未达阈值松手则收起不刷新。
  */
 public class MainActivity extends Activity {
 
@@ -67,9 +76,20 @@ public class MainActivity extends Activity {
     /** v1.1: 首次 onResume 标志——首次初始化由 onCreate/权限回调负责（此时定位权限可能尚未批准），跳过 */
     private boolean firstResume = true;
 
-    /** v1.1: 下拉手势的起点坐标（仅起点位于屏幕上部时记录，-1 表示无效）与单次触发标志 */
+    /** v1.1: 下拉手势的起点坐标（仅起点位于屏幕上部时记录，-1 表示无效）与拖拽激活标志 */
     private float touchStartX = -1f, touchStartY = -1f;
     private boolean pullTriggered = false;
+
+    /** v1.2: 下拉刷新头部三件套——头部容器、刷新中转圈、提示文字 */
+    private LinearLayout refreshHeader;
+    private ProgressBar pbRefresh;
+    private TextView tvRefreshHint;
+
+    /** v1.2: 刷新中标志（头部展开转圈期间禁止再次触发，防重入） */
+    private boolean refreshing = false;
+
+    /** v1.2: 松手触发刷新的高度阈值(px，72dp) 与头部最大高度(px，110dp)，onCreate 里按密度换算 */
+    private int triggerPx = 0, maxPx = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,6 +104,14 @@ public class MainActivity extends Activity {
         pbSend = findViewById(R.id.pb_send);
         btnSend = findViewById(R.id.btn_send);
         wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+
+        // v1.2: 下拉刷新头部三件套 + 阈值按屏幕密度换算(72dp 触发 / 110dp 封顶)
+        refreshHeader = findViewById(R.id.refresh_header);
+        pbRefresh = findViewById(R.id.pb_refresh);
+        tvRefreshHint = findViewById(R.id.tv_refresh_hint);
+        float density = getResources().getDisplayMetrics().density;
+        triggerPx = (int) (72 * density);
+        maxPx = (int) (110 * density);
 
         // v1.1: 监听用户对 SSID 框的手动编辑（程序 setText 期间抑制），编辑过后刷新不再覆盖其输入
         etSsid.addTextChangedListener(new TextWatcher() {
@@ -150,17 +178,19 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * v1.1: 下拉刷新手势——在页面上部起手、明显向下滑动超过阈值时触发一次 WiFi 信息刷新。
+     * v1.2: 下拉刷新拖拽手势（完整动画版）。
+     * 交互模型：页面上部起手向下拖 → 刷新头部跟手展开（提示「↓ 下拉刷新」，拉过 72dp 阈值变「↑ 松开立即刷新」，
+     * 超阈值后半程 0.5x 阻尼，封顶 110dp）→ 松手：达到阈值则回弹到刷新位开始刷新（转圈+「正在刷新…」，
+     * 完成后头部平滑收起）；未达阈值则收起不刷新。
      * 经 dispatchTouchEvent 只监听不拦截（事件仍正常分发给子控件），不影响按钮/输入框交互；
-     * 仅当起点位于屏幕上部 40% 区域时启用，避免与密码框长按拖选等手势冲突。
-     * 阈值 160px（高密度屏约 0.5 英寸）+ 垂直度要求 dy > 2|dx|，防误触。
+     * 仅当起点位于屏幕上部 40% 区域且不在刷新中时启用，避免与密码框长按拖选等手势冲突。
      */
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                // 起点在屏幕上部才算候选下拉手势，否则标记无效
-                if (ev.getY() < getResources().getDisplayMetrics().heightPixels * 0.4f) {
+                // 起点在屏幕上部且当前不在刷新中，才算候选下拉手势；否则标记无效
+                if (!refreshing && ev.getY() < getResources().getDisplayMetrics().heightPixels * 0.4f) {
                     touchStartX = ev.getX();
                     touchStartY = ev.getY();
                     pullTriggered = false;
@@ -169,22 +199,101 @@ public class MainActivity extends Activity {
                 }
                 break;
             case MotionEvent.ACTION_MOVE:
-                // 本轮未触发过且起点有效：垂直下拉超过 160px 且明显垂直时触发一次
-                if (!pullTriggered && touchStartY >= 0) {
+                if (touchStartY >= 0 && !refreshing) {
                     float dy = ev.getY() - touchStartY;
                     float dx = Math.abs(ev.getX() - touchStartX);
-                    if (dy > 160f && dy > dx * 2f) {
+                    // 激活判定：明显向下(dy>12px 且 dy>2|dx|)；激活后手指回滑也继续跟手(可回收取消)
+                    if (!pullTriggered && dy > 12f && dy > dx * 2f) {
                         pullTriggered = true;
-                        fillNetworkInfo(true);
+                    }
+                    if (pullTriggered) {
+                        updateHeaderHeight(dy);
                     }
                 }
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                touchStartX = touchStartY = -1f;
+                if (touchStartY >= 0) {
+                    touchStartX = touchStartY = -1f;
+                    if (pullTriggered && !refreshing) {
+                        if (refreshHeader.getLayoutParams().height >= triggerPx) {
+                            startRefreshWithAnim();   // 达到阈值：回弹到刷新位并触发
+                        } else {
+                            animateHeaderTo(0, null); // 未达阈值：收起，不刷新
+                        }
+                    }
+                }
+                pullTriggered = false;
                 break;
         }
         return super.dispatchTouchEvent(ev);
+    }
+
+    /**
+     * v1.2: 拖拽中根据手指位移更新头部高度（跟手）。
+     * 阈值内 1:1 跟手；超过阈值后半程 0.5x 阻尼（SwipeRefreshLayout 同款手感）；封顶 maxPx；
+     * 手指回滑(dy 变小/变负)时高度同步回收，提示文字随是否达到阈值切换。
+     */
+    private void updateHeaderHeight(float dy) {
+        int h;
+        if (dy <= triggerPx) {
+            h = (int) dy;
+        } else {
+            h = (int) (triggerPx + (dy - triggerPx) * 0.5f);
+        }
+        h = Math.max(0, Math.min(h, maxPx));
+        setHeaderHeight(h);
+        tvRefreshHint.setText(h >= triggerPx ? "↑ 松开立即刷新" : "↓ 下拉刷新");
+    }
+
+    /** v1.2: 直接设置头部高度(px)并触发重排（内容区被自然下推） */
+    private void setHeaderHeight(int px) {
+        ViewGroup.LayoutParams lp = refreshHeader.getLayoutParams();
+        if (lp.height != px) {
+            lp.height = px;
+            refreshHeader.setLayoutParams(lp);
+        }
+    }
+
+    /**
+     * v1.2: 头部高度补间动画（收起/回弹共用），减速插值器，时长随距离自适应。
+     * onEnd 在动画结束时回调（可空）。
+     */
+    private void animateHeaderTo(int target, Runnable onEnd) {
+        int from = refreshHeader.getLayoutParams().height;
+        if (from == target) {
+            if (onEnd != null) onEnd.run();
+            return;
+        }
+        ValueAnimator va = ValueAnimator.ofInt(from, target);
+        va.setDuration(Math.max(150, Math.abs(target - from)));
+        va.setInterpolator(new DecelerateInterpolator());
+        va.addUpdateListener(anim -> setHeaderHeight((Integer) anim.getAnimatedValue()));
+        va.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (onEnd != null) onEnd.run();
+            }
+        });
+        va.start();
+    }
+
+    /**
+     * v1.2: 松手达到阈值后进入刷新：头部回弹到触发高度 → 显示转圈与「正在刷新…」→ 执行刷新
+     * （fillNetworkInfo 为毫秒级同步操作）→ 至少停留 600ms 让刷新状态可见 → 平滑收起头部。
+     */
+    private void startRefreshWithAnim() {
+        if (refreshing) return;
+        refreshing = true;
+        animateHeaderTo(triggerPx, () -> {
+            pbRefresh.setVisibility(View.VISIBLE);
+            tvRefreshHint.setText("正在刷新…");
+            fillNetworkInfo(true);
+            refreshHeader.postDelayed(() -> {
+                pbRefresh.setVisibility(View.GONE);
+                animateHeaderTo(0, () -> refreshing = false);
+            }, 600);
+        });
     }
 
     /** 自动读取当前 WiFi 的 SSID 与频段，填好输入框，并对 5G 给出红色警告（启动路径） */
