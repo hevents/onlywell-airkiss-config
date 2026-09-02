@@ -5,17 +5,15 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- v1.2: 下拉刷新头部——初始高度 0 不占位；拖拽时跟手展开，松手回弹；刷新中显示转圈 -->
+    <!-- v1.2: 下拉刷新头部——初始高度 0 不占位；拖拽时跟手展开，松手回弹；刷新中显示转圈
+         v1.3: 去掉负 margin（负 margin+动态高度在部分 ROM 上测量行为异常，会把后续内容顶出屏），灰条接受常规边距 -->
     <LinearLayout
         android:id="@+id/refresh_header"
         android:orientation="horizontal"
         android:gravity="center"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:background="#EEEEEE"
-        android:layout_marginTop="-16dp"
-        android:layout_marginLeft="-16dp"
-        android:layout_marginRight="-16dp">
+        android:background="#EEEEEE">
         <ProgressBar
             android:id="@+id/pb_refresh"
             style="?android:attr/progressBarStyleSmall"
