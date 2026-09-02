@@ -47,6 +47,9 @@ import java.nio.ByteOrder;
  *      → v1.2：下拉刷新完整动画——拖拽时刷新头部跟手展开(超阈值后半程 0.5x 阻尼)，提示文字随高度切换
  *               「↓ 下拉刷新」/「↑ 松开立即刷新」，松手回弹动画；达到阈值松手才触发刷新(转圈+「正在刷新…」)，
  *               完成后头部平滑收起；未达阈值松手则收起不刷新。
+ *      → v1.3：修复下拉后顶部提示第一行被顶出屏幕——① 头部布局去掉负 margin(部分 ROM 上测量异常)；
+ *               ② 拖拽激活死区 12px→28px(轻碰不再误触)；③ 兜底归零：松手/onResume 时头部高度>0 一律强制收起，
+ *               保证任何路径下内容都回到原始位置。
  */
 public class MainActivity extends Activity {
 
@@ -166,10 +169,15 @@ public class MainActivity extends Activity {
     /**
      * v1.1: 从系统设置切网（如 5G → 2.4G）回到本应用时，自动重新读取当前 WiFi 并刷新界面。
      * 首次 onResume 跳过——首次初始化由 onCreate/权限回调负责，避免权限尚未批准时的重复读取与误报。
+     * v1.3: 兜底归零——若因任何异常路径导致刷新头部滞留在非 0 高度（内容被顶出原始位置），回到前台时强制收起复位。
      */
     @Override
     protected void onResume() {
         super.onResume();
+        // v1.3: 头部高度>0 且不在刷新流程中 = 异常滞留，立即归零复位
+        if (!refreshing && refreshHeader != null && refreshHeader.getLayoutParams().height > 0) {
+            setHeaderHeight(0);
+        }
         if (firstResume) {
             firstResume = false;
             return;
@@ -202,8 +210,9 @@ public class MainActivity extends Activity {
                 if (touchStartY >= 0 && !refreshing) {
                     float dy = ev.getY() - touchStartY;
                     float dx = Math.abs(ev.getX() - touchStartX);
-                    // 激活判定：明显向下(dy>12px 且 dy>2|dx|)；激活后手指回滑也继续跟手(可回收取消)
-                    if (!pullTriggered && dy > 12f && dy > dx * 2f) {
+                    // 激活判定：明显向下(v1.3: 死区 12px→28px，约 9dp，轻碰不再误触；dy>2|dx| 且激活后手指
+                    // 回滑也继续跟手，可回收取消)
+                    if (!pullTriggered && dy > 28f && dy > dx * 2f) {
                         pullTriggered = true;
                     }
                     if (pullTriggered) {
@@ -222,6 +231,11 @@ public class MainActivity extends Activity {
                             animateHeaderTo(0, null); // 未达阈值：收起，不刷新
                         }
                     }
+                }
+                // v1.3: 兜底归零——无论手势状态如何，只要不在刷新流程中且头部高度>0（异常滞留），
+                // 一律强制收起，保证内容回到原始位置（修复"第一行再也看不到"）
+                if (!refreshing && refreshHeader.getLayoutParams().height > 0 && !pullTriggered) {
+                    animateHeaderTo(0, null);
                 }
                 pullTriggered = false;
                 break;
@@ -291,7 +305,11 @@ public class MainActivity extends Activity {
             fillNetworkInfo(true);
             refreshHeader.postDelayed(() -> {
                 pbRefresh.setVisibility(View.GONE);
-                animateHeaderTo(0, () -> refreshing = false);
+                // v1.3: 收起结束后强制精确归零（动画取整误差/异常路径的最后一道保险），内容必定复位
+                animateHeaderTo(0, () -> {
+                    setHeaderHeight(0);
+                    refreshing = false;
+                });
             }, 600);
         });
     }
