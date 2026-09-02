@@ -5,6 +5,33 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- v1.2: 下拉刷新头部——初始高度 0 不占位；拖拽时跟手展开，松手回弹；刷新中显示转圈 -->
+    <LinearLayout
+        android:id="@+id/refresh_header"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:background="#EEEEEE"
+        android:layout_marginTop="-16dp"
+        android:layout_marginLeft="-16dp"
+        android:layout_marginRight="-16dp">
+        <ProgressBar
+            android:id="@+id/pb_refresh"
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:indeterminate="true"
+            android:visibility="gone" />
+        <TextView
+            android:id="@+id/tv_refresh_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:textColor="#666666"
+            android:layout_marginLeft="8dp" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/tv_tip"
         android:layout_width="match_parent"
