@@ -114,7 +114,7 @@ python airkiss_sender.py --ssid <你的WiFi名称> --password testpass --dry-run
 
 不想开电脑时，可用手机直接广播 Airkiss：
 
-- **文件**：`OnlywellAirkiss-Config-v1.0.apk`（已用 Android build-tools 34 自签名，v1/v2/v3 签名齐全，Android 5.0+ 均可安装）。当前版本 **v1.0**（首个正式版。功能：① 界面标题显示版本号；② 端口 10000 被占用时给出明确引导——多为微信等别的配网应用占用，广播不受影响；③ 密码框下方提示：部分表芯固件密码仅支持 8 位，超出 8 位会失败）。
+- **文件**：`OnlywellAirkiss-Config-v1.1.apk`（已用 Android build-tools 34 自签名，v1/v2/v3 签名齐全，Android 5.0+ 均可安装）。当前版本 **v1.1**（新增 WiFi 刷新：切网回到应用自动刷新当前 WiFi；页面上部下拉手动刷新。其他功能：① 界面标题显示版本号；② 端口 10000 被占用时给出明确引导——多为微信等别的配网应用占用，广播不受影响；③ 密码框下方提示：部分表芯固件密码仅支持 8 位，超出 8 位会失败）。
 - **隐私**：本工具已**去除所有具体设备的 MAC / IP / WiFi 名 / 密码**，提示语只说"看 ESP_ 开头的设备"，可放心分享给他人使用。
 - **安装**：把 apk 传到手机 → 允许"安装未知应用"（设置→安全/应用安装权限）→ 点开安装。
 - **权限**：`INTERNET` / `ACCESS_WIFI_STATE` / `ACCESS_FINE_LOCATION` / `NEARBY_WIFI_DEVICES`。
@@ -135,6 +135,7 @@ python airkiss_sender.py --ssid <你的WiFi名称> --password testpass --dry-run
 
 | 版本 | 关键变更 |
 |---|---|
+| **v1.1** | **WiFi 刷新**：切网回到应用自动刷新当前 WiFi（SSID+频段）；页面上部下拉手动刷新；手输过 SSID 不被覆盖 |
 | **v1.0** | **首个正式版（2026-09-02 发布）**，功能为下列内测版本之合集 |
 | v1.3 | 初版；ACK 监听（按 IP 解析）+ ARP 扫描兜底 |
 | v1.4 | 诊断版：ACK 监听窗口从固定 6 秒延长到「广播 + 10 秒」；ARP 加诊断 dump |
