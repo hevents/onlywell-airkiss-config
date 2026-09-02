@@ -8,6 +8,9 @@ import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -24,7 +27,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
- * Onlywell 表芯 Airkiss 配网发送端（手机版，v1.12）。
+ * Onlywell 表芯 Airkiss 配网发送端（手机版，v1.1）。
  * 用法：手机连上 2.4G WiFi → 表芯长按 WIFI 键 3 秒(秒针到 12)进入监听态
  *      → 本应用自动读取当前 SSID 并判断频段(5G 会警告) → 填密码 → 点发送
  *      → 发送后监听设备 ACK 回播(端口 10000, SO_REUSEADDR 防 EADDRINUSE)；ACK 载荷为 MAC 非 IP，用 MAC 唯一标识设备。
@@ -33,6 +36,8 @@ import java.nio.ByteOrder;
  *      → v1.13：① 根治端口 10000 泄漏(finally 关闭 rs)，bind 失败不再无引导；② 拆分 BindException 提示「强行停止/等 35 秒」；
  *               ③ 发送侧对全 1 广播 255.255.255.255 的 EPERM 自动切换为子网定向广播兜底。
  *      → v1.14：① 界面标题显示版本号(vX.Y)，便于核对装的是哪一版；② 修正 EADDRINUSE 引导——强制停止本应用仍占用说明占用者是微信/安信可IoT 等别的配网应用，引导强制停止对应应用或重启；并说明广播不受影响。
+ *      → v1.1：WiFi 刷新——打开时连的是 5G、去系统设置切到 2.4G 后回到本页自动重读当前 WiFi；
+ *               页面上部下拉手势也可手动刷新；用户手动改过 SSID 框则刷新不覆盖其输入，只更新频段提示行。
  */
 public class MainActivity extends Activity {
 
@@ -53,6 +58,19 @@ public class MainActivity extends Activity {
     /** v1.11：ACK 回播包的源 IP 地址（IP 头源地址，即设备发包所用地址；volatile 同上） */
     private volatile String ackIp = null;
 
+    /** v1.1: 用户是否手动编辑过 SSID 输入框（编辑过后刷新不再覆盖其输入，只更新频段提示行） */
+    private boolean ssidEditedByUser = false;
+
+    /** v1.1: 程序自动 setText 期间抑制 TextWatcher，避免被误判为用户手动编辑 */
+    private boolean suppressSsidWatcher = false;
+
+    /** v1.1: 首次 onResume 标志——首次初始化由 onCreate/权限回调负责（此时定位权限可能尚未批准），跳过 */
+    private boolean firstResume = true;
+
+    /** v1.1: 下拉手势的起点坐标（仅起点位于屏幕上部时记录，-1 表示无效）与单次触发标志 */
+    private float touchStartX = -1f, touchStartY = -1f;
+    private boolean pullTriggered = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -66,6 +84,22 @@ public class MainActivity extends Activity {
         pbSend = findViewById(R.id.pb_send);
         btnSend = findViewById(R.id.btn_send);
         wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+
+        // v1.1: 监听用户对 SSID 框的手动编辑（程序 setText 期间抑制），编辑过后刷新不再覆盖其输入
+        etSsid.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (!suppressSsidWatcher) {
+                    ssidEditedByUser = true;
+                }
+            }
+        });
 
         // v1.14: 标题栏显示版本号（从 PackageManager 取 versionName），方便核对当前装的是哪一版
         try {
@@ -101,13 +135,75 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** 自动读取当前 WiFi 的 SSID 与频段，填好输入框，并对 5G 给出红色警告 */
+    /**
+     * v1.1: 从系统设置切网（如 5G → 2.4G）回到本应用时，自动重新读取当前 WiFi 并刷新界面。
+     * 首次 onResume 跳过——首次初始化由 onCreate/权限回调负责，避免权限尚未批准时的重复读取与误报。
+     */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (firstResume) {
+            firstResume = false;
+            return;
+        }
+        fillNetworkInfo(false);
+    }
+
+    /**
+     * v1.1: 下拉刷新手势——在页面上部起手、明显向下滑动超过阈值时触发一次 WiFi 信息刷新。
+     * 经 dispatchTouchEvent 只监听不拦截（事件仍正常分发给子控件），不影响按钮/输入框交互；
+     * 仅当起点位于屏幕上部 40% 区域时启用，避免与密码框长按拖选等手势冲突。
+     * 阈值 160px（高密度屏约 0.5 英寸）+ 垂直度要求 dy > 2|dx|，防误触。
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                // 起点在屏幕上部才算候选下拉手势，否则标记无效
+                if (ev.getY() < getResources().getDisplayMetrics().heightPixels * 0.4f) {
+                    touchStartX = ev.getX();
+                    touchStartY = ev.getY();
+                    pullTriggered = false;
+                } else {
+                    touchStartX = touchStartY = -1f;
+                }
+                break;
+            case MotionEvent.ACTION_MOVE:
+                // 本轮未触发过且起点有效：垂直下拉超过 160px 且明显垂直时触发一次
+                if (!pullTriggered && touchStartY >= 0) {
+                    float dy = ev.getY() - touchStartY;
+                    float dx = Math.abs(ev.getX() - touchStartX);
+                    if (dy > 160f && dy > dx * 2f) {
+                        pullTriggered = true;
+                        fillNetworkInfo(true);
+                    }
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                touchStartX = touchStartY = -1f;
+                break;
+        }
+        return super.dispatchTouchEvent(ev);
+    }
+
+    /** 自动读取当前 WiFi 的 SSID 与频段，填好输入框，并对 5G 给出红色警告（启动路径） */
     private void fillNetworkInfo() {
+        fillNetworkInfo(false);
+    }
+
+    /**
+     * 读取当前 WiFi 的 SSID 与频段并刷新界面。
+     * v1.1: fromRefresh=true 表示由下拉手势触发，附 Toast 反馈；onResume 自动刷新为静默。
+     * 用户手动编辑过 SSID 框时不覆盖其输入，只更新频段提示行。
+     */
+    private void fillNetworkInfo(boolean fromRefresh) {
         if (wifiManager == null) return;
         WifiInfo info = wifiManager.getConnectionInfo();
         if (info == null) {
             tvBand.setTextColor(0xFFCC0000);
             tvBand.setText("未连接到 WiFi，请先连上 WiFi");
+            if (fromRefresh) Toast.makeText(this, "当前未连接 WiFi", Toast.LENGTH_SHORT).show();
             return;
         }
         String ssid = info.getSSID();
@@ -116,10 +212,16 @@ public class MainActivity extends Activity {
 
         // 自动填充 SSID（仅当能读到且不是占位值）
         if (ssid != null && !ssid.isEmpty() && !"<unknown ssid>".equals(ssid)) {
-            etSsid.setText(ssid);
+            // v1.1: 用户手动编辑过 SSID 框则不覆盖（避免冲掉手输内容），只更新频段提示行
+            if (!ssidEditedByUser) {
+                suppressSsidWatcher = true;   // 抑制 TextWatcher，程序填充不算用户编辑
+                etSsid.setText(ssid);
+                suppressSsidWatcher = false;
+            }
         } else {
             tvBand.setTextColor(0xFFCC0000);
             tvBand.setText("无法读取 SSID：请在系统设置授予本应用“位置”权限后重开应用");
+            if (fromRefresh) Toast.makeText(this, "无法读取 WiFi 名称（位置权限未授予）", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -142,6 +244,7 @@ public class MainActivity extends Activity {
         } else {
             tvBand.setText("当前 WiFi：" + ssid + "（" + band + " " + freq + "MHz）");
         }
+        if (fromRefresh) Toast.makeText(this, "已刷新：" + ssid + "（" + band + "）", Toast.LENGTH_SHORT).show();
     }
 
     private void log(final String s) {
